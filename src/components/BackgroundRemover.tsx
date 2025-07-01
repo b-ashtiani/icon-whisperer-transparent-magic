@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,53 +37,103 @@ const BackgroundRemover = () => {
   };
 
   const findImagesFromUrl = async (url: string): Promise<FoundImage[]> => {
-    try {
-      // Use a CORS proxy to fetch the page content
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const response = await fetch(proxyUrl);
-      const data = await response.json();
-      const html = data.contents;
+    // List of CORS proxy services to try
+    const corsProxies = [
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+      `https://cors-anywhere.herokuapp.com/${url}`,
+      `https://thingproxy.freeboard.io/fetch/${url}`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+    ];
 
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      
-      const images: FoundImage[] = [];
-      const baseUrl = new URL(url);
+    let lastError: Error | null = null;
 
-      // Find all img tags with src containing .png or .svg
-      const imgTags = doc.querySelectorAll('img[src]');
-      imgTags.forEach((img) => {
-        const src = img.getAttribute('src');
-        if (src && (src.includes('.png') || src.includes('.svg'))) {
-          const fullUrl = src.startsWith('http') ? src : new URL(src, baseUrl).href;
-          const filename = src.split('/').pop() || 'image';
-          const type = src.includes('.svg') ? 'svg' : 'png';
-          images.push({ url: fullUrl, type, filename });
+    for (const proxyUrl of corsProxies) {
+      try {
+        console.log(`Trying proxy: ${proxyUrl}`);
+        
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json, text/html, */*',
+          },
+          signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-      });
 
-      // Find all links to .png or .svg files
-      const linkTags = doc.querySelectorAll('a[href]');
-      linkTags.forEach((link) => {
-        const href = link.getAttribute('href');
-        if (href && (href.endsWith('.png') || href.endsWith('.svg'))) {
-          const fullUrl = href.startsWith('http') ? href : new URL(href, baseUrl).href;
-          const filename = href.split('/').pop() || 'image';
-          const type = href.endsWith('.svg') ? 'svg' : 'png';
-          images.push({ url: fullUrl, type, filename });
+        let html: string;
+        const contentType = response.headers.get('content-type') || '';
+        
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          html = data.contents || data.body || '';
+        } else {
+          html = await response.text();
         }
-      });
 
-      // Remove duplicates
-      const uniqueImages = images.filter((img, index, self) => 
-        index === self.findIndex(i => i.url === img.url)
-      );
+        if (!html || html.trim().length === 0) {
+          throw new Error('Empty response received');
+        }
 
-      return uniqueImages;
-    } catch (error) {
-      console.error('Error fetching images from URL:', error);
-      throw new Error('Failed to fetch images from the provided URL');
+        console.log('Successfully fetched page content');
+        
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const images: FoundImage[] = [];
+        const baseUrl = new URL(url);
+
+        // Find all img tags with src containing .png or .svg
+        const imgTags = doc.querySelectorAll('img[src]');
+        imgTags.forEach((img) => {
+          const src = img.getAttribute('src');
+          if (src && (src.includes('.png') || src.includes('.svg'))) {
+            try {
+              const fullUrl = src.startsWith('http') ? src : new URL(src, baseUrl).href;
+              const filename = src.split('/').pop()?.split('?')[0] || 'image';
+              const type = src.includes('.svg') ? 'svg' : 'png';
+              images.push({ url: fullUrl, type, filename });
+            } catch (e) {
+              console.warn('Invalid image URL:', src);
+            }
+          }
+        });
+
+        // Find all links to .png or .svg files
+        const linkTags = doc.querySelectorAll('a[href]');
+        linkTags.forEach((link) => {
+          const href = link.getAttribute('href');
+          if (href && (href.endsWith('.png') || href.endsWith('.svg') || href.includes('.png?') || href.includes('.svg?'))) {
+            try {
+              const fullUrl = href.startsWith('http') ? href : new URL(href, baseUrl).href;
+              const filename = href.split('/').pop()?.split('?')[0] || 'image';
+              const type = href.includes('.svg') ? 'svg' : 'png';
+              images.push({ url: fullUrl, type, filename });
+            } catch (e) {
+              console.warn('Invalid link URL:', href);
+            }
+          }
+        });
+
+        // Remove duplicates
+        const uniqueImages = images.filter((img, index, self) => 
+          index === self.findIndex(i => i.url === img.url)
+        );
+
+        console.log(`Found ${uniqueImages.length} unique images`);
+        return uniqueImages;
+
+      } catch (error) {
+        console.warn(`Proxy failed: ${proxyUrl}`, error);
+        lastError = error as Error;
+        continue;
+      }
     }
+
+    // If all proxies failed, throw the last error
+    throw new Error(`Failed to fetch images from the provided URL. All proxy services failed. Last error: ${lastError?.message || 'Unknown error'}`);
   };
 
   const handleSearchImages = async () => {
@@ -129,7 +178,7 @@ const BackgroundRemover = () => {
       console.error('Error searching for images:', error);
       toast({
         title: "Error",
-        description: "Failed to search for images. Please check if the URL is accessible.",
+        description: "Failed to search for images. The website may be blocking access or the URL may not be accessible.",
         variant: "destructive",
       });
     } finally {
