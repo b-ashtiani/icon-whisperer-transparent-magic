@@ -1,3 +1,4 @@
+
 import { pipeline, env } from '@huggingface/transformers';
 
 // Configure transformers.js to always download models
@@ -121,12 +122,70 @@ export const loadImage = (file: Blob): Promise<HTMLImageElement> => {
   });
 };
 
-export const loadImageFromUrl = (url: string): Promise<HTMLImageElement> => {
+export const loadImageFromUrl = async (url: string): Promise<HTMLImageElement> => {
+  console.log('Attempting to load image from URL:', url);
+  
+  // Try to fetch the image through a proxy first to avoid CORS issues
+  const corsProxies = [
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    `https://cors-anywhere.herokuapp.com/${url}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+  ];
+
+  for (const proxyUrl of corsProxies) {
+    try {
+      console.log(`Trying to fetch image via proxy: ${proxyUrl}`);
+      
+      const response = await fetch(proxyUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      
+      // Verify it's actually an image
+      if (!blob.type.startsWith('image/')) {
+        throw new Error('Response is not an image');
+      }
+
+      console.log('Successfully fetched image via proxy, creating image element');
+      
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          console.log('Image loaded successfully');
+          resolve(img);
+        };
+        img.onerror = (error) => {
+          console.error('Error loading image from blob:', error);
+          reject(new Error('Failed to load image from blob'));
+        };
+        img.src = URL.createObjectURL(blob);
+      });
+
+    } catch (error) {
+      console.warn(`Proxy failed: ${proxyUrl}`, error);
+      continue;
+    }
+  }
+
+  // If all proxies failed, try direct load as fallback
+  console.log('All proxies failed, trying direct load...');
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onload = () => {
+      console.log('Direct image load successful');
+      resolve(img);
+    };
+    img.onerror = (error) => {
+      console.error('Direct image load failed:', error);
+      reject(new Error('Failed to load image. The image may be blocked by CORS policy or the URL may be inaccessible.'));
+    };
     img.src = url;
   });
 };
