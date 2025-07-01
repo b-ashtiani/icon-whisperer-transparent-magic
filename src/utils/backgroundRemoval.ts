@@ -35,7 +35,9 @@ function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingCont
 export const removeBackground = async (imageElement: HTMLImageElement): Promise<Blob> => {
   try {
     console.log('Starting background removal process...');
-    const segmenter = await pipeline('image-segmentation', 'Xenova/segformer-b0-finetuned-ade-512-512', {
+    
+    // Use RMBG model which is specifically designed for background removal
+    const remover = await pipeline('image-segmentation', 'briaai/RMBG-1.4', {
       device: 'webgpu',
     });
     
@@ -53,14 +55,14 @@ export const removeBackground = async (imageElement: HTMLImageElement): Promise<
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
     console.log('Image converted to base64');
     
-    // Process the image with the segmentation model
-    console.log('Processing with segmentation model...');
-    const result = await segmenter(imageData);
+    // Process the image with the background removal model
+    console.log('Processing with background removal model...');
+    const result = await remover(imageData);
     
-    console.log('Segmentation result:', result);
+    console.log('Background removal result:', result);
     
     if (!result || !Array.isArray(result) || result.length === 0 || !result[0].mask) {
-      throw new Error('Invalid segmentation result');
+      throw new Error('Invalid background removal result');
     }
     
     // Create a new canvas for the masked image
@@ -84,13 +86,12 @@ export const removeBackground = async (imageElement: HTMLImageElement): Promise<
     
     // Apply inverted mask to alpha channel
     for (let i = 0; i < result[0].mask.data.length; i++) {
-      // Invert the mask value (1 - value) to keep the subject instead of the background
-      const alpha = Math.round((1 - result[0].mask.data[i]) * 255);
-      data[i * 4 + 3] = alpha;
+      const alpha = Math.round(result[0].mask.data[i] * 255);
+      data[i * 4 + 3] = alpha; // Set alpha channel
     }
     
     outputCtx.putImageData(outputImageData, 0, 0);
-    console.log('Mask applied successfully');
+    console.log('Background removed successfully');
     
     // Convert canvas to blob
     return new Promise((resolve, reject) => {
