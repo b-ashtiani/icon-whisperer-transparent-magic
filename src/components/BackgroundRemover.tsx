@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,8 +12,9 @@ import { useToast } from '@/hooks/use-toast';
 
 interface FoundImage {
   url: string;
-  type: 'svg' | 'png';
+  type: 'svg' | 'png' | 'inline-svg';
   filename: string;
+  svgContent?: string;
 }
 
 const BackgroundRemover = () => {
@@ -117,12 +119,30 @@ const BackgroundRemover = () => {
           }
         });
 
+        // Find all inline SVG elements
+        const svgElements = doc.querySelectorAll('svg');
+        svgElements.forEach((svg, index) => {
+          const svgContent = svg.outerHTML;
+          const svgId = svg.getAttribute('id') || svg.getAttribute('class') || `svg-${index + 1}`;
+          
+          // Create a data URL for the SVG
+          const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' });
+          const svgUrl = URL.createObjectURL(svgBlob);
+          
+          images.push({
+            url: svgUrl,
+            type: 'inline-svg',
+            filename: `${svgId}.svg`,
+            svgContent: svgContent
+          });
+        });
+
         // Remove duplicates
         const uniqueImages = images.filter((img, index, self) => 
           index === self.findIndex(i => i.url === img.url)
         );
 
-        console.log(`Found ${uniqueImages.length} unique images`);
+        console.log(`Found ${uniqueImages.length} unique images (including inline SVGs)`);
         return uniqueImages;
 
       } catch (error) {
@@ -266,7 +286,7 @@ const BackgroundRemover = () => {
           Icon Background Remover
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Enter a website URL to find SVG and PNG images, then remove backgrounds to make them transparent.
+          Enter a website URL to find SVG and PNG images (including inline SVGs), then remove backgrounds to make them transparent.
         </p>
       </div>
 
@@ -300,7 +320,7 @@ const BackgroundRemover = () => {
               ) : (
                 <>
                   <Search className="h-4 w-4 mr-2" />
-                  Find Images
+                  Find Images & SVGs
                 </>
               )}
             </Button>
@@ -326,20 +346,29 @@ const BackgroundRemover = () => {
                       <Label htmlFor={`image-${index}`} className="cursor-pointer">
                         <div className="flex items-center gap-3">
                           <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                            <img
-                              src={image.url}
-                              alt={image.filename}
-                              className="w-full h-full object-contain"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
+                            {image.type === 'inline-svg' && image.svgContent ? (
+                              <div 
+                                className="w-full h-full flex items-center justify-center"
+                                dangerouslySetInnerHTML={{ __html: image.svgContent }}
+                              />
+                            ) : (
+                              <img
+                                src={image.url}
+                                alt={image.filename}
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                }}
+                              />
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="font-medium truncate">{image.filename}</p>
                             <p className="text-sm text-muted-foreground">
-                              {image.type.toUpperCase()} • {image.url.length > 50 ? `${image.url.substring(0, 50)}...` : image.url}
+                              {image.type === 'inline-svg' ? 'Inline SVG' : image.type.toUpperCase()} • 
+                              {image.type === 'inline-svg' ? 'Embedded SVG element' : 
+                               (image.url.length > 50 ? `${image.url.substring(0, 50)}...` : image.url)}
                             </p>
                           </div>
                         </div>
