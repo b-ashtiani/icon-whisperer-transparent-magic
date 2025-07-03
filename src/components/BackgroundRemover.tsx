@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Download, Image as ImageIcon, Loader2, Upload, Link, Search } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Settings } from 'lucide-react';
 import { removeBackground, loadImageFromUrl } from '@/utils/backgroundRemoval';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,10 +18,13 @@ interface FoundImage {
   svgContent?: string;
 }
 
+type AlgorithmType = 'icon' | 'ai';
+
 const BackgroundRemover = () => {
   const [inputUrl, setInputUrl] = useState('');
   const [foundImages, setFoundImages] = useState<FoundImage[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
+  const [algorithm, setAlgorithm] = useState<AlgorithmType>('icon');
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -225,8 +229,9 @@ const BackgroundRemover = () => {
       setOriginalImage(selectedImageUrl);
       setProgress(30);
 
-      console.log('Starting background removal...');
-      const processedBlob = await removeBackground(imageElement);
+      console.log(`Starting background removal with ${algorithm} algorithm...`);
+      const useIconAlgorithm = algorithm === 'icon';
+      const processedBlob = await removeBackground(imageElement, useIconAlgorithm);
       setProgress(80);
 
       const processedUrl = URL.createObjectURL(processedBlob);
@@ -236,13 +241,13 @@ const BackgroundRemover = () => {
 
       toast({
         title: "Success!",
-        description: "Background removed successfully",
+        description: `Background removed successfully using ${algorithm === 'icon' ? 'specialized icon' : 'AI'} algorithm`,
       });
     } catch (error) {
       console.error('Error processing image:', error);
       toast({
         title: "Error",
-        description: "Failed to process image. Please try a different image.",
+        description: "Failed to process image. Please try a different image or algorithm.",
         variant: "destructive",
       });
     } finally {
@@ -286,7 +291,7 @@ const BackgroundRemover = () => {
           Icon Background Remover
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Enter a website URL to find SVG and PNG images (including inline SVGs), then remove backgrounds to make them transparent.
+          Enter a website URL to find SVG and PNG images (including inline SVGs), then remove backgrounds to make them transparent with specialized algorithms for icons.
         </p>
       </div>
 
@@ -336,7 +341,35 @@ const BackgroundRemover = () => {
               Select Image to Process ({foundImages.length} found)
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <Settings className="h-5 w-5" />
+                <Label htmlFor="algorithm-select" className="text-sm font-medium">
+                  Background Removal Algorithm:
+                </Label>
+                <Select value={algorithm} onValueChange={(value: AlgorithmType) => setAlgorithm(value)}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="icon">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Icon Algorithm (Recommended)</span>
+                        <span className="text-xs text-muted-foreground">Best for solid color backgrounds</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="ai">
+                      <div className="flex flex-col">
+                        <span className="font-medium">AI Algorithm</span>
+                        <span className="text-xs text-muted-foreground">For complex backgrounds</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <RadioGroup value={selectedImageUrl} onValueChange={setSelectedImageUrl}>
               <div className="grid gap-4 max-h-96 overflow-y-auto">
                 {foundImages.map((image, index) => (
@@ -387,7 +420,7 @@ const BackgroundRemover = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Processing
+                  Processing with {algorithm === 'icon' ? 'Icon' : 'AI'} Algorithm
                 </>
               ) : (
                 <>

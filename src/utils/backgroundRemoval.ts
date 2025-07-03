@@ -1,5 +1,6 @@
 
 import { pipeline, env } from '@huggingface/transformers';
+import { removeIconBackground } from './iconBackgroundRemoval';
 
 // Configure transformers.js to always download models
 env.allowLocalModels = false;
@@ -32,11 +33,22 @@ function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingCont
   return false;
 }
 
-export const removeBackground = async (imageElement: HTMLImageElement): Promise<Blob> => {
+export const removeBackground = async (imageElement: HTMLImageElement, useIconAlgorithm: boolean = true): Promise<Blob> => {
   try {
     console.log('Starting background removal process...');
     
-    // Use RMBG model which is specifically designed for background removal
+    // Use specialized icon algorithm for better results on solid backgrounds
+    if (useIconAlgorithm) {
+      console.log('Using specialized icon background removal algorithm...');
+      return await removeIconBackground(imageElement, {
+        tolerance: 35,
+        edgeThreshold: 10,
+        smoothing: true
+      });
+    }
+    
+    // Fallback to AI model for complex backgrounds
+    console.log('Using AI model for background removal...');
     const remover = await pipeline('image-segmentation', 'briaai/RMBG-1.4', {
       device: 'webgpu',
     });
