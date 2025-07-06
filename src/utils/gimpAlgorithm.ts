@@ -105,7 +105,7 @@ export const gimpBackgroundRemoval = async (imageElement: HTMLImageElement, opti
     const backgroundColor = corners[0]; // Simplified for this implementation
     
     // Create selection mask
-    const mask = new Array(width * height).fill(0);
+    const mask: number[] = new Array(width * height).fill(0);
     
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
