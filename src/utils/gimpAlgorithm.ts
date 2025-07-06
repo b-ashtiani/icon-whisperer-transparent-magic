@@ -1,4 +1,3 @@
-
 // GIMP-inspired algorithm using color selection and feathering
 export interface GimpOptions {
   colorTolerance: number;
@@ -119,8 +118,8 @@ export const gimpBackgroundRemoval = async (imageElement: HTMLImageElement, opti
     }
     
     // Apply feathering (Gaussian blur to the mask)
-    let alphaMask = mask.map(x => x === 1 ? 0 : 1); // Invert mask
-    
+    let alphaMask: number[] = mask.map(x => x === 1 ? 0 : 1); // Invert mask
+  
     if (opts.featherRadius > 0) {
       alphaMask = gaussianBlur(alphaMask, width, height, opts.featherRadius);
     }
