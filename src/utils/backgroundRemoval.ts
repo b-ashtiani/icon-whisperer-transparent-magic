@@ -1,6 +1,9 @@
-
 import { pipeline, env } from '@huggingface/transformers';
 import { removeIconBackground } from './iconBackgroundRemoval';
+import { rembgBackgroundRemoval } from './rembgAlgorithm';
+import { modnetBackgroundRemoval } from './modnetAlgorithm';
+import { gimpBackgroundRemoval } from './gimpAlgorithm';
+import { inkscapeBackgroundRemoval } from './inkscapeAlgorithm';
 
 // Configure transformers.js to always download models
 env.allowLocalModels = false;
@@ -33,97 +36,133 @@ function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingCont
   return false;
 }
 
-export const removeBackground = async (imageElement: HTMLImageElement, useIconAlgorithm: boolean = true): Promise<Blob> => {
-  try {
-    console.log('Starting background removal process...');
-    
-    // Use specialized icon algorithm for better results on solid backgrounds
-    if (useIconAlgorithm) {
-      console.log('Using specialized icon background removal algorithm...');
+export type BackgroundRemovalAlgorithm = 'icon' | 'ai' | 'rembg' | 'modnet' | 'gimp' | 'inkscape';
+
+export const algorithmInfo = {
+  icon: { name: 'Icon Algorithm', description: 'Best for solid color backgrounds' },
+  ai: { name: 'AI Algorithm', description: 'General purpose AI model' },
+  rembg: { name: 'Rembg', description: 'U²-Net based removal' },
+  modnet: { name: 'MODNet', description: 'Portrait matting focused' },
+  gimp: { name: 'GIMP-style', description: 'Color selection with feathering' },
+  inkscape: { name: 'Inkscape-style', description: 'Vector-like edge detection' }
+};
+
+export const removeBackgroundWithAlgorithm = async (
+  imageElement: HTMLImageElement, 
+  algorithm: BackgroundRemovalAlgorithm
+): Promise<Blob> => {
+  console.log(`Using ${algorithm} algorithm for background removal`);
+  
+  switch (algorithm) {
+    case 'icon':
       return await removeIconBackground(imageElement, {
         tolerance: 35,
         edgeThreshold: 10,
         smoothing: true
       });
-    }
     
-    // Fallback to AI model for complex backgrounds
-    console.log('Using AI model for background removal...');
-    const remover = await pipeline('image-segmentation', 'briaai/RMBG-1.4', {
-      device: 'webgpu',
-    });
+    case 'rembg':
+      return await rembgBackgroundRemoval(imageElement);
     
-    // Convert HTMLImageElement to canvas
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    case 'modnet':
+      return await modnetBackgroundRemoval(imageElement);
     
-    if (!ctx) throw new Error('Could not get canvas context');
+    case 'gimp':
+      return await gimpBackgroundRemoval(imageElement);
     
-    // Resize image if needed and draw it to canvas
-    const wasResized = resizeImageIfNeeded(canvas, ctx, imageElement);
-    console.log(`Image ${wasResized ? 'was' : 'was not'} resized. Final dimensions: ${canvas.width}x${canvas.height}`);
+    case 'inkscape':
+      return await inkscapeBackgroundRemoval(imageElement);
     
-    // Get image data as base64
-    const imageData = canvas.toDataURL('image/jpeg', 0.8);
-    console.log('Image converted to base64');
-    
-    // Process the image with the background removal model
-    console.log('Processing with background removal model...');
-    const result = await remover(imageData);
-    
-    console.log('Background removal result:', result);
-    
-    if (!result || !Array.isArray(result) || result.length === 0 || !result[0].mask) {
-      throw new Error('Invalid background removal result');
-    }
-    
-    // Create a new canvas for the masked image
-    const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = canvas.width;
-    outputCanvas.height = canvas.height;
-    const outputCtx = outputCanvas.getContext('2d');
-    
-    if (!outputCtx) throw new Error('Could not get output canvas context');
-    
-    // Draw original image
-    outputCtx.drawImage(canvas, 0, 0);
-    
-    // Apply the mask
-    const outputImageData = outputCtx.getImageData(
-      0, 0,
-      outputCanvas.width,
-      outputCanvas.height
-    );
-    const data = outputImageData.data;
-    
-    // Apply inverted mask to alpha channel
-    for (let i = 0; i < result[0].mask.data.length; i++) {
-      const alpha = Math.round(result[0].mask.data[i] * 255);
-      data[i * 4 + 3] = alpha; // Set alpha channel
-    }
-    
-    outputCtx.putImageData(outputImageData, 0, 0);
-    console.log('Background removed successfully');
-    
-    // Convert canvas to blob
-    return new Promise((resolve, reject) => {
-      outputCanvas.toBlob(
-        (blob) => {
-          if (blob) {
-            console.log('Successfully created final blob');
-            resolve(blob);
-          } else {
-            reject(new Error('Failed to create blob'));
-          }
-        },
-        'image/png',
-        1.0
+    case 'ai':
+    default:
+      // Fallback to AI model for complex backgrounds
+      console.log('Using AI model for background removal...');
+      const remover = await pipeline('image-segmentation', 'briaai/RMBG-1.4', {
+        device: 'webgpu',
+      });
+      
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) throw new Error('Could not get canvas context');
+      
+      const wasResized = resizeImageIfNeeded(canvas, ctx, imageElement);
+      console.log(`Image ${wasResized ? 'was' : 'was not'} resized. Final dimensions: ${canvas.width}x${canvas.height}`);
+      
+      const imageData = canvas.toDataURL('image/jpeg', 0.8);
+      console.log('Image converted to base64');
+      
+      console.log('Processing with background removal model...');
+      const result = await remover(imageData);
+      
+      console.log('Background removal result:', result);
+      
+      if (!result || !Array.isArray(result) || result.length === 0 || !result[0].mask) {
+        throw new Error('Invalid background removal result');
+      }
+      
+      const outputCanvas = document.createElement('canvas');
+      outputCanvas.width = canvas.width;
+      outputCanvas.height = canvas.height;
+      const outputCtx = outputCanvas.getContext('2d');
+      
+      if (!outputCtx) throw new Error('Could not get output canvas context');
+      
+      outputCtx.drawImage(canvas, 0, 0);
+      
+      const outputImageData = outputCtx.getImageData(
+        0, 0,
+        outputCanvas.width,
+        outputCanvas.height
       );
-    });
-  } catch (error) {
-    console.error('Error removing background:', error);
-    throw error;
+      const data = outputImageData.data;
+      
+      for (let i = 0; i < result[0].mask.data.length; i++) {
+        const alpha = Math.round(result[0].mask.data[i] * 255);
+        data[i * 4 + 3] = alpha;
+      }
+      
+      outputCtx.putImageData(outputImageData, 0, 0);
+      console.log('Background removed successfully');
+      
+      return new Promise((resolve, reject) => {
+        outputCanvas.toBlob(
+          (blob) => {
+            if (blob) {
+              console.log('Successfully created final blob');
+              resolve(blob);
+            } else {
+              reject(new Error('Failed to create blob'));
+            }
+          },
+          'image/png',
+          1.0
+        );
+      });
   }
+};
+
+export const processImageWithAllAlgorithms = async (imageElement: HTMLImageElement): Promise<{
+  algorithm: BackgroundRemovalAlgorithm;
+  result: string;
+  blob: Blob;
+}[]> => {
+  const algorithms: BackgroundRemovalAlgorithm[] = ['icon', 'ai', 'rembg', 'modnet', 'gimp', 'inkscape'];
+  const results = [];
+  
+  for (const algorithm of algorithms) {
+    try {
+      console.log(`Processing with ${algorithm} algorithm...`);
+      const blob = await removeBackgroundWithAlgorithm(imageElement, algorithm);
+      const result = URL.createObjectURL(blob);
+      results.push({ algorithm, result, blob });
+    } catch (error) {
+      console.error(`Error with ${algorithm} algorithm:`, error);
+      // Continue with other algorithms even if one fails
+    }
+  }
+  
+  return results;
 };
 
 export const loadImage = (file: Blob): Promise<HTMLImageElement> => {

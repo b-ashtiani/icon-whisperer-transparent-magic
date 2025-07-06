@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,9 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Settings } from 'lucide-react';
-import { removeBackground, loadImageFromUrl } from '@/utils/backgroundRemoval';
+import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Grid } from 'lucide-react';
+import { processImageWithAllAlgorithms, loadImageFromUrl, algorithmInfo, BackgroundRemovalAlgorithm } from '@/utils/backgroundRemoval';
 import { useToast } from '@/hooks/use-toast';
 
 interface FoundImage {
@@ -24,13 +22,15 @@ const BackgroundRemover = () => {
   const [inputUrl, setInputUrl] = useState('');
   const [foundImages, setFoundImages] = useState<FoundImage[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
-  const [algorithm, setAlgorithm] = useState<AlgorithmType>('icon');
   const [originalImage, setOriginalImage] = useState<string | null>(null);
-  const [processedImage, setProcessedImage] = useState<string | null>(null);
+  const [processedResults, setProcessedResults] = useState<{
+    algorithm: BackgroundRemovalAlgorithm;
+    result: string;
+    blob: Blob;
+  }[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
   const isValidUrl = (url: string) => {
@@ -229,25 +229,22 @@ const BackgroundRemover = () => {
       setOriginalImage(selectedImageUrl);
       setProgress(30);
 
-      console.log(`Starting background removal with ${algorithm} algorithm...`);
-      const useIconAlgorithm = algorithm === 'icon';
-      const processedBlob = await removeBackground(imageElement, useIconAlgorithm);
-      setProgress(80);
+      console.log('Processing image with all algorithms...');
+      const results = await processImageWithAllAlgorithms(imageElement);
+      setProgress(90);
 
-      const processedUrl = URL.createObjectURL(processedBlob);
-      setProcessedImage(processedUrl);
-      setDownloadUrl(processedUrl);
+      setProcessedResults(results);
       setProgress(100);
 
       toast({
         title: "Success!",
-        description: `Background removed successfully using ${algorithm === 'icon' ? 'specialized icon' : 'AI'} algorithm`,
+        description: `Processed with ${results.length} algorithms successfully`,
       });
     } catch (error) {
       console.error('Error processing image:', error);
       toast({
         title: "Error",
-        description: "Failed to process image. Please try a different image or algorithm.",
+        description: "Failed to process image. Please try a different image.",
         variant: "destructive",
       });
     } finally {
@@ -256,20 +253,18 @@ const BackgroundRemover = () => {
     }
   };
 
-  const handleDownload = () => {
-    if (downloadUrl) {
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = 'transparent-icon.png';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+  const handleDownload = (algorithm: BackgroundRemovalAlgorithm, blob: Blob) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `transparent-icon-${algorithm}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-      toast({
-        title: "Downloaded!",
-        description: "Your transparent icon has been downloaded",
-      });
-    }
+    toast({
+      title: "Downloaded!",
+      description: `Your ${algorithmInfo[algorithm].name} result has been downloaded`,
+    });
   };
 
   const handleReset = () => {
@@ -277,21 +272,22 @@ const BackgroundRemover = () => {
     setFoundImages([]);
     setSelectedImageUrl('');
     setOriginalImage(null);
-    setProcessedImage(null);
-    setDownloadUrl(null);
-    if (downloadUrl) {
-      URL.revokeObjectURL(downloadUrl);
-    }
+    setProcessedResults([]);
+    
+    // Clean up object URLs
+    processedResults.forEach(result => {
+      URL.revokeObjectURL(result.result);
+    });
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-8">
+    <div className="max-w-6xl mx-auto p-6 space-y-8">
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-          Icon Background Remover
+          Multi-Algorithm Background Remover
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Enter a website URL to find SVG and PNG images (including inline SVGs), then remove backgrounds to make them transparent with specialized algorithms for icons.
+          Enter a website URL to find images, then see results from multiple background removal algorithms side-by-side.
         </p>
       </div>
 
@@ -342,34 +338,6 @@ const BackgroundRemover = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <Settings className="h-5 w-5" />
-                <Label htmlFor="algorithm-select" className="text-sm font-medium">
-                  Background Removal Algorithm:
-                </Label>
-                <Select value={algorithm} onValueChange={(value: AlgorithmType) => setAlgorithm(value)}>
-                  <SelectTrigger className="w-64">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="icon">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Icon Algorithm (Recommended)</span>
-                        <span className="text-xs text-muted-foreground">Best for solid color backgrounds</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="ai">
-                      <div className="flex flex-col">
-                        <span className="font-medium">AI Algorithm</span>
-                        <span className="text-xs text-muted-foreground">For complex backgrounds</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
             <RadioGroup value={selectedImageUrl} onValueChange={setSelectedImageUrl}>
               <div className="grid gap-4 max-h-96 overflow-y-auto">
                 {foundImages.map((image, index) => (
@@ -420,12 +388,12 @@ const BackgroundRemover = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Processing with {algorithm === 'icon' ? 'Icon' : 'AI'} Algorithm
+                  Processing with All Algorithms
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Remove Background
+                  <Grid className="h-4 w-4 mr-2" />
+                  Process with All Algorithms
                 </>
               )}
             </Button>
@@ -435,8 +403,8 @@ const BackgroundRemover = () => {
                 <Progress value={progress} className="w-full" />
                 <p className="text-sm text-center text-muted-foreground">
                   {progress < 30 ? 'Loading image...' : 
-                   progress < 80 ? 'Removing background...' : 
-                   'Finalizing...'}
+                   progress < 90 ? 'Processing with multiple algorithms...' : 
+                   'Finalizing results...'}
                 </p>
               </div>
             )}
@@ -444,61 +412,73 @@ const BackgroundRemover = () => {
         </Card>
       )}
 
-      {(originalImage || processedImage) && (
-        <div className="grid md:grid-cols-2 gap-6">
-          {originalImage && (
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ImageIcon className="h-5 w-5" />
-                  Original Image
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                  <img
-                    src={originalImage}
-                    alt="Original"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
+      {/* Results Grid */}
+      {(originalImage && processedResults.length > 0) && (
+        <div className="space-y-6">
+          {/* Original Image */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                Original Image
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden max-w-md mx-auto">
+                <img
+                  src={originalImage}
+                  alt="Original"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-          {processedImage && (
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ImageIcon className="h-5 w-5" />
-                  Processed Image
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg overflow-hidden relative">
-                  <div className="absolute inset-0 opacity-20" style={{
-                    backgroundImage: `url("data:image/svg+xml,%3csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3e%3cg fill='%23000' fill-opacity='0.1' fill-rule='evenodd'%3e%3crect width='10' height='10'/%3e%3crect x='10' y='10' width='10' height='10'/%3e%3c/g%3e%3c/svg%3e")`,
-                  }} />
-                  <img
-                    src={processedImage}
-                    alt="Processed"
-                    className="w-full h-full object-contain relative z-10"
-                  />
-                </div>
-                <Button 
-                  onClick={handleDownload} 
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Transparent Icon
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+          {/* Algorithm Results */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Grid className="h-5 w-5" />
+                Algorithm Comparison ({processedResults.length} results)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {processedResults.map(({ algorithm, result, blob }) => (
+                  <div key={algorithm} className="space-y-4">
+                    <div className="text-center">
+                      <h3 className="font-semibold text-lg">{algorithmInfo[algorithm].name}</h3>
+                      <p className="text-sm text-muted-foreground">{algorithmInfo[algorithm].description}</p>
+                    </div>
+                    
+                    <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg overflow-hidden relative">
+                      <div className="absolute inset-0 opacity-20" style={{
+                        backgroundImage: `url("data:image/svg+xml,%3csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3e%3cg fill='%23000' fill-opacity='0.1' fill-rule='evenodd'%3e%3crect width='10' height='10'/%3e%3crect x='10' y='10' width='10' height='10'/%3e%3c/g%3e%3c/svg%3e")`,
+                      }} />
+                      <img
+                        src={result}
+                        alt={`${algorithmInfo[algorithm].name} result`}
+                        className="w-full h-full object-contain relative z-10"
+                      />
+                    </div>
+                    
+                    <Button 
+                      onClick={() => handleDownload(algorithm, blob)}
+                      className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                      size="sm"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download {algorithmInfo[algorithm].name}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {(foundImages.length > 0 || originalImage || processedImage) && (
+      {(foundImages.length > 0 || originalImage || processedResults.length > 0) && (
         <div className="text-center">
           <Button 
             onClick={handleReset} 
