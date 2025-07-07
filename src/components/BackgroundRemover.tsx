@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -5,8 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Grid } from 'lucide-react';
-import { processImageWithAllAlgorithms, loadImageFromUrl, algorithmInfo, BackgroundRemovalAlgorithm } from '@/utils/backgroundRemoval';
+import { Switch } from '@/components/ui/switch';
+import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Grid, FileImage } from 'lucide-react';
+import { processImageWithAllAlgorithms, loadImageFromUrl, algorithmInfo, BackgroundRemovalAlgorithm, loadImage } from '@/utils/backgroundRemoval';
+import { convertSvgToPng, isSvgImage } from '@/utils/svgToPng';
 import { useToast } from '@/hooks/use-toast';
 
 interface FoundImage {
@@ -31,6 +34,7 @@ const BackgroundRemover = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [convertSvgToPngEnabled, setConvertSvgToPngEnabled] = useState(true);
   const { toast } = useToast();
 
   const isValidUrl = (url: string) => {
@@ -225,7 +229,32 @@ const BackgroundRemover = () => {
       setProgress(10);
       
       console.log('Loading image from URL:', selectedImageUrl);
-      const imageElement = await loadImageFromUrl(selectedImageUrl);
+      let imageElement = await loadImageFromUrl(selectedImageUrl);
+      
+      // Check if it's an SVG and convert to PNG if option is enabled
+      if (convertSvgToPngEnabled && isSvgImage(imageElement)) {
+        console.log('Converting SVG to PNG...');
+        setProgress(20);
+        
+        try {
+          const pngBlob = await convertSvgToPng(imageElement, 2);
+          imageElement = await loadImage(pngBlob);
+          console.log('SVG successfully converted to PNG');
+          
+          toast({
+            title: "SVG Converted",
+            description: "SVG has been converted to PNG for better processing",
+          });
+        } catch (conversionError) {
+          console.warn('SVG conversion failed, proceeding with original:', conversionError);
+          toast({
+            title: "Conversion Warning",
+            description: "SVG conversion failed, using original image",
+            variant: "destructive",
+          });
+        }
+      }
+      
       setOriginalImage(selectedImageUrl);
       setProgress(30);
 
@@ -379,6 +408,26 @@ const BackgroundRemover = () => {
                 ))}
               </div>
             </RadioGroup>
+
+            {/* SVG to PNG Conversion Option */}
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
+              <div className="flex items-center gap-3">
+                <FileImage className="h-5 w-5 text-blue-600" />
+                <div>
+                  <Label htmlFor="svg-convert" className="font-medium text-blue-900">
+                    Convert SVGs to PNG
+                  </Label>
+                  <p className="text-sm text-blue-700">
+                    Automatically convert SVG images to PNG format for better algorithm compatibility
+                  </p>
+                </div>
+              </div>
+              <Switch
+                id="svg-convert"
+                checked={convertSvgToPngEnabled}
+                onCheckedChange={setConvertSvgToPngEnabled}
+              />
+            </div>
 
             <Button 
               onClick={handleProcessImage} 
