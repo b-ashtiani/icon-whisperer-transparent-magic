@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Grid, FileImage } from 'lucide-react';
 import { processImageWithAllAlgorithms, loadImageFromUrl, algorithmInfo, BackgroundRemovalAlgorithm, loadImage } from '@/utils/backgroundRemoval';
 import { convertSvgToPng, isSvgImage } from '@/utils/svgToPng';
@@ -26,6 +27,7 @@ const BackgroundRemover = () => {
   const [foundImages, setFoundImages] = useState<FoundImage[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
   const [originalImage, setOriginalImage] = useState<string | null>(null);
+  const [originalImageBlob, setOriginalImageBlob] = useState<Blob | null>(null);
   const [processedResults, setProcessedResults] = useState<{
     algorithm: BackgroundRemovalAlgorithm;
     result: string;
@@ -231,6 +233,11 @@ const BackgroundRemover = () => {
       console.log('Loading image from URL:', selectedImageUrl);
       let imageElement = await loadImageFromUrl(selectedImageUrl);
       
+      // Store original image as blob for download
+      const response = await fetch(selectedImageUrl);
+      const originalBlob = await response.blob();
+      setOriginalImageBlob(originalBlob);
+      
       // Check if it's an SVG and convert to PNG if option is enabled
       if (convertSvgToPngEnabled && isSvgImage(imageElement)) {
         console.log('Converting SVG to PNG...');
@@ -296,11 +303,29 @@ const BackgroundRemover = () => {
     });
   };
 
+  const handleDownloadOriginal = () => {
+    if (!originalImageBlob) return;
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(originalImageBlob);
+    const selectedImage = foundImages.find(img => img.url === selectedImageUrl);
+    link.download = selectedImage?.filename || 'original-image';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Downloaded!",
+      description: "Original image has been downloaded",
+    });
+  };
+
   const handleReset = () => {
     setInputUrl('');
     setFoundImages([]);
     setSelectedImageUrl('');
     setOriginalImage(null);
+    setOriginalImageBlob(null);
     setProcessedResults([]);
     
     // Clean up object URLs
@@ -375,7 +400,7 @@ const BackgroundRemover = () => {
                     <div className="flex-1 min-w-0">
                       <Label htmlFor={`image-${index}`} className="cursor-pointer">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                          <div className="w-12 h-12 bg-white border rounded-lg overflow-hidden flex-shrink-0">
                             {image.type === 'inline-svg' && image.svgContent ? (
                               <div 
                                 className="w-full h-full flex items-center justify-center"
@@ -462,18 +487,30 @@ const BackgroundRemover = () => {
       )}
 
       {/* Results Grid */}
-      {(originalImage && processedResults.length > 0) && (
+      {(originalImage && (processedResults.length > 0 || isProcessing)) && (
         <div className="space-y-6">
           {/* Original Image */}
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ImageIcon className="h-5 w-5" />
-                Original Image
+              <CardTitle className="flex items-center gap-2 justify-between">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-5 w-5" />
+                  Original Image
+                </div>
+                {originalImageBlob && (
+                  <Button 
+                    onClick={handleDownloadOriginal}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Original
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden max-w-md mx-auto">
+              <div className="aspect-square bg-white border rounded-lg overflow-hidden max-w-md mx-auto">
                 <img
                   src={originalImage}
                   alt="Original"
@@ -488,39 +525,53 @@ const BackgroundRemover = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Grid className="h-5 w-5" />
-                Algorithm Comparison ({processedResults.length} results)
+                Algorithm Comparison {processedResults.length > 0 && `(${processedResults.length} results)`}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {processedResults.map(({ algorithm, result, blob }) => (
-                  <div key={algorithm} className="space-y-4">
-                    <div className="text-center">
-                      <h3 className="font-semibold text-lg">{algorithmInfo[algorithm].name}</h3>
-                      <p className="text-sm text-muted-foreground">{algorithmInfo[algorithm].description}</p>
+                {isProcessing ? (
+                  // Show skeleton loaders while processing
+                  Array.from({ length: 7 }).map((_, index) => (
+                    <div key={index} className="space-y-4">
+                      <div className="text-center">
+                        <Skeleton className="h-6 w-32 mx-auto mb-2" />
+                        <Skeleton className="h-4 w-48 mx-auto" />
+                      </div>
+                      <Skeleton className="aspect-square rounded-lg w-full" />
+                      <Skeleton className="h-9 w-full" />
                     </div>
-                    
-                    <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg overflow-hidden relative">
-                      <div className="absolute inset-0 opacity-20" style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3e%3cg fill='%23000' fill-opacity='0.1' fill-rule='evenodd'%3e%3crect width='10' height='10'/%3e%3crect x='10' y='10' width='10' height='10'/%3e%3c/g%3e%3c/svg%3e")`,
-                      }} />
-                      <img
-                        src={result}
-                        alt={`${algorithmInfo[algorithm].name} result`}
-                        className="w-full h-full object-contain relative z-10"
-                      />
+                  ))
+                ) : (
+                  processedResults.map(({ algorithm, result, blob }) => (
+                    <div key={algorithm} className="space-y-4">
+                      <div className="text-center">
+                        <h3 className="font-semibold text-lg">{algorithmInfo[algorithm].name}</h3>
+                        <p className="text-sm text-muted-foreground">{algorithmInfo[algorithm].description}</p>
+                      </div>
+                      
+                      <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg overflow-hidden relative">
+                        <div className="absolute inset-0 opacity-20" style={{
+                          backgroundImage: `url("data:image/svg+xml,%3csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3e%3cg fill='%23000' fill-opacity='0.1' fill-rule='evenodd'%3e%3crect width='10' height='10'/%3e%3crect x='10' y='10' width='10' height='10'/%3e%3c/g%3e%3c/svg%3e")`,
+                        }} />
+                        <img
+                          src={result}
+                          alt={`${algorithmInfo[algorithm].name} result`}
+                          className="w-full h-full object-contain relative z-10"
+                        />
+                      </div>
+                      
+                      <Button 
+                        onClick={() => handleDownload(algorithm, blob)}
+                        className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                        size="sm"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download {algorithmInfo[algorithm].name}
+                      </Button>
                     </div>
-                    
-                    <Button 
-                      onClick={() => handleDownload(algorithm, blob)}
-                      className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
-                      size="sm"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download {algorithmInfo[algorithm].name}
-                    </Button>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
