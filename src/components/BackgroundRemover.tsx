@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface FoundImage {
   url: string;
-  type: 'svg' | 'png' | 'inline-svg';
+  type: 'svg' | 'png' | 'inline-svg' | 'css-svg';
   filename: string;
   svgContent?: string;
 }
@@ -46,6 +45,58 @@ const BackgroundRemover = () => {
     } catch {
       return false;
     }
+  };
+
+  const extractSvgsFromCss = (cssText: string, baseUrl: URL): FoundImage[] => {
+    const svgImages: FoundImage[] = [];
+    
+    // Regular expressions to find SVG URLs in CSS
+    const urlRegex = /url\(['"]?([^'")\s]+\.svg[^'")\s]*?)['"]?\)/gi;
+    const backgroundRegex = /background[^:]*:\s*[^;]*url\(['"]?([^'")\s]+\.svg[^'")\s]*?)['"]?\)[^;]*/gi;
+    
+    let match;
+    const foundUrls = new Set<string>();
+    
+    // Extract from url() functions
+    while ((match = urlRegex.exec(cssText)) !== null) {
+      const svgUrl = match[1];
+      if (!foundUrls.has(svgUrl)) {
+        foundUrls.add(svgUrl);
+        try {
+          const fullUrl = svgUrl.startsWith('http') ? svgUrl : new URL(svgUrl, baseUrl).href;
+          const filename = svgUrl.split('/').pop()?.split('?')[0] || 'css-svg';
+          svgImages.push({
+            url: fullUrl,
+            type: 'css-svg',
+            filename: filename
+          });
+        } catch (e) {
+          console.warn('Invalid CSS SVG URL:', svgUrl);
+        }
+      }
+    }
+    
+    // Extract from background properties
+    urlRegex.lastIndex = 0; // Reset regex
+    while ((match = backgroundRegex.exec(cssText)) !== null) {
+      const svgUrl = match[1];
+      if (!foundUrls.has(svgUrl)) {
+        foundUrls.add(svgUrl);
+        try {
+          const fullUrl = svgUrl.startsWith('http') ? svgUrl : new URL(svgUrl, baseUrl).href;
+          const filename = svgUrl.split('/').pop()?.split('?')[0] || 'bg-svg';
+          svgImages.push({
+            url: fullUrl,
+            type: 'css-svg',
+            filename: filename
+          });
+        } catch (e) {
+          console.warn('Invalid CSS background SVG URL:', svgUrl);
+        }
+      }
+    }
+    
+    return svgImages;
   };
 
   const findImagesFromUrl = async (url: string): Promise<FoundImage[]> => {
@@ -147,12 +198,57 @@ const BackgroundRemover = () => {
           });
         });
 
+        // Extract SVGs from CSS
+        const styleElements = doc.querySelectorAll('style');
+        styleElements.forEach(style => {
+          const cssText = style.textContent || '';
+          const cssImages = extractSvgsFromCss(cssText, baseUrl);
+          images.push(...cssImages);
+        });
+
+        // Find external CSS files and extract SVGs from them
+        const linkElements = doc.querySelectorAll('link[rel="stylesheet"]');
+        for (const linkEl of linkElements) {
+          const cssHref = linkEl.getAttribute('href');
+          if (cssHref) {
+            try {
+              const cssUrl = cssHref.startsWith('http') ? cssHref : new URL(cssHref, baseUrl).href;
+              console.log('Fetching external CSS:', cssUrl);
+              
+              // Try to fetch the CSS file
+              for (const proxyUrl of corsProxies) {
+                try {
+                  const cssProxyUrl = proxyUrl.replace(encodeURIComponent(url), encodeURIComponent(cssUrl));
+                  const cssResponse = await fetch(cssProxyUrl, {
+                    method: 'GET',
+                    headers: { 'Accept': 'text/css, */*' },
+                    signal: AbortSignal.timeout(5000)
+                  });
+                  
+                  if (cssResponse.ok) {
+                    const cssText = await cssResponse.text();
+                    const cssImages = extractSvgsFromCss(cssText, baseUrl);
+                    images.push(...cssImages);
+                    console.log(`Found ${cssImages.length} SVGs in CSS file: ${cssUrl}`);
+                    break; // Successfully fetched, no need to try other proxies
+                  }
+                } catch (cssError) {
+                  console.warn(`Failed to fetch CSS from ${cssUrl}:`, cssError);
+                  continue;
+                }
+              }
+            } catch (e) {
+              console.warn('Invalid CSS URL:', cssHref);
+            }
+          }
+        }
+
         // Remove duplicates
         const uniqueImages = images.filter((img, index, self) => 
           index === self.findIndex(i => i.url === img.url)
         );
 
-        console.log(`Found ${uniqueImages.length} unique images (including inline SVGs)`);
+        console.log(`Found ${uniqueImages.length} unique images (including inline SVGs and CSS SVGs)`);
         return uniqueImages;
 
       } catch (error) {
@@ -341,7 +437,7 @@ const BackgroundRemover = () => {
           Multi-Algorithm Background Remover
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Enter a website URL to find images, then see results from multiple background removal algorithms side-by-side.
+          Enter a website URL to find images (including SVGs from CSS), then see results from multiple background removal algorithms side-by-side.
         </p>
       </div>
 
@@ -421,8 +517,10 @@ const BackgroundRemover = () => {
                           <div className="min-w-0 flex-1">
                             <p className="font-medium truncate">{image.filename}</p>
                             <p className="text-sm text-muted-foreground">
-                              {image.type === 'inline-svg' ? 'Inline SVG' : image.type.toUpperCase()} • 
+                              {image.type === 'inline-svg' ? 'Inline SVG' : 
+                               image.type === 'css-svg' ? 'CSS SVG' : image.type.toUpperCase()} • 
                               {image.type === 'inline-svg' ? 'Embedded SVG element' : 
+                               image.type === 'css-svg' ? 'SVG from CSS stylesheet' :
                                (image.url.length > 50 ? `${image.url.substring(0, 50)}...` : image.url)}
                             </p>
                           </div>
