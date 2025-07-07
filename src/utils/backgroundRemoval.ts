@@ -4,6 +4,7 @@ import { rembgBackgroundRemoval } from './rembgAlgorithm';
 import { modnetBackgroundRemoval } from './modnetAlgorithm';
 import { gimpBackgroundRemoval } from './gimpAlgorithm';
 import { inkscapeBackgroundRemoval } from './inkscapeAlgorithm';
+import { inspyrenetBackgroundRemoval } from './inspyrenetAlgorithm';
 
 // Configure transformers.js to always download models
 env.allowLocalModels = false;
@@ -36,7 +37,7 @@ function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingCont
   return false;
 }
 
-export type BackgroundRemovalAlgorithm = 'icon' | 'ai' | 'rembg' | 'modnet' | 'gimp' | 'inkscape';
+export type BackgroundRemovalAlgorithm = 'icon' | 'ai' | 'rembg' | 'modnet' | 'gimp' | 'inkscape' | 'inspyrenet';
 
 export const algorithmInfo = {
   icon: { name: 'Icon Algorithm', description: 'Best for solid color backgrounds' },
@@ -44,7 +45,8 @@ export const algorithmInfo = {
   rembg: { name: 'Rembg', description: 'U²-Net based removal' },
   modnet: { name: 'MODNet', description: 'Portrait matting focused' },
   gimp: { name: 'GIMP-style', description: 'Color selection with feathering' },
-  inkscape: { name: 'Inkscape-style', description: 'Vector-like edge detection' }
+  inkscape: { name: 'Inkscape-style', description: 'Vector-like edge detection' },
+  inspyrenet: { name: 'InSPyReNet', description: 'Salient object detection' }
 };
 
 export const removeBackgroundWithAlgorithm = async (
@@ -72,6 +74,9 @@ export const removeBackgroundWithAlgorithm = async (
     
     case 'inkscape':
       return await inkscapeBackgroundRemoval(imageElement);
+    
+    case 'inspyrenet':
+      return await inspyrenetBackgroundRemoval(imageElement);
     
     case 'ai':
     default:
@@ -147,7 +152,7 @@ export const processImageWithAllAlgorithms = async (imageElement: HTMLImageEleme
   result: string;
   blob: Blob;
 }[]> => {
-  const algorithms: BackgroundRemovalAlgorithm[] = ['icon', 'ai', 'rembg', 'modnet', 'gimp', 'inkscape'];
+  const algorithms: BackgroundRemovalAlgorithm[] = ['icon', 'ai', 'rembg', 'modnet', 'gimp', 'inkscape', 'inspyrenet'];
   const results = [];
   
   for (const algorithm of algorithms) {
