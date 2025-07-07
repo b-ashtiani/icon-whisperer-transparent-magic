@@ -38,9 +38,22 @@ const BackgroundRemover = () => {
   const [convertSvgToPngEnabled, setConvertSvgToPngEnabled] = useState(true);
   const { toast } = useToast();
 
+  const normalizeUrl = (url: string) => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) return '';
+    
+    // Check if URL already has a protocol
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      return trimmedUrl;
+    }
+    
+    // Add https:// prefix if no protocol is present
+    return `https://${trimmedUrl}`;
+  };
+
   const isValidUrl = (url: string) => {
     try {
-      new URL(url);
+      new URL(normalizeUrl(url));
       return true;
     } catch {
       return false;
@@ -283,9 +296,10 @@ const BackgroundRemover = () => {
 
     try {
       setIsSearching(true);
-      console.log('Searching for images at URL:', inputUrl);
+      const normalizedUrl = normalizeUrl(inputUrl);
+      console.log('Searching for images at URL:', normalizedUrl);
       
-      const images = await findImagesFromUrl(inputUrl);
+      const images = await findImagesFromUrl(normalizedUrl);
       
       if (images.length === 0) {
         toast({
@@ -309,6 +323,13 @@ const BackgroundRemover = () => {
       });
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearchImages();
     }
   };
 
@@ -452,9 +473,10 @@ const BackgroundRemover = () => {
           <div className="flex gap-2">
             <Input
               type="url"
-              placeholder="https://example.com"
+              placeholder="example.com (https:// will be added automatically)"
               value={inputUrl}
               onChange={(e) => setInputUrl(e.target.value)}
+              onKeyDown={handleKeyDown}
               className="flex-1"
               disabled={isSearching}
             />
