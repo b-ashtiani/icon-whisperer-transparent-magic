@@ -7,7 +7,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Grid, FileImage } from 'lucide-react';
+import { Download, Image as ImageIcon, Loader2, Upload, Link, Search, Grid, FileImage, Copy } from 'lucide-react';
 import { processImageWithAllAlgorithms, loadImageFromUrl, algorithmInfo, BackgroundRemovalAlgorithm, loadImage } from '@/utils/backgroundRemoval';
 import { convertSvgToPng, isSvgImage } from '@/utils/svgToPng';
 import { useToast } from '@/hooks/use-toast';
@@ -193,11 +193,19 @@ const BackgroundRemover = () => {
           }
         });
 
-        // Find all inline SVG elements
-        const svgElements = doc.querySelectorAll('svg');
-        svgElements.forEach((svg, index) => {
+        // Enhanced inline SVG detection - search in body, head, and all containers
+        const allSvgElements = doc.querySelectorAll('svg');
+        console.log(`Found ${allSvgElements.length} SVG elements in the document`);
+        
+        allSvgElements.forEach((svg, index) => {
           const svgContent = svg.outerHTML;
-          const svgId = svg.getAttribute('id') || svg.getAttribute('class') || `svg-${index + 1}`;
+          
+          // Get a meaningful identifier for the SVG
+          const svgId = svg.getAttribute('id') || 
+                       svg.getAttribute('class')?.split(' ')[0] || 
+                       svg.getAttribute('aria-label') ||
+                       svg.getAttribute('title') ||
+                       `svg-${index + 1}`;
           
           // Create a data URL for the SVG
           const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' });
@@ -209,6 +217,27 @@ const BackgroundRemover = () => {
             filename: `${svgId}.svg`,
             svgContent: svgContent
           });
+        });
+
+        // Also search for SVG content in script tags (sometimes SVGs are stored as strings)
+        const scriptTags = doc.querySelectorAll('script');
+        scriptTags.forEach((script, scriptIndex) => {
+          const scriptContent = script.textContent || '';
+          const svgMatches = scriptContent.match(/<svg[^>]*>[\s\S]*?<\/svg>/gi);
+          
+          if (svgMatches) {
+            svgMatches.forEach((svgMatch, matchIndex) => {
+              const svgBlob = new Blob([svgMatch], { type: 'image/svg+xml' });
+              const svgUrl = URL.createObjectURL(svgBlob);
+              
+              images.push({
+                url: svgUrl,
+                type: 'inline-svg',
+                filename: `script-svg-${scriptIndex}-${matchIndex}.svg`,
+                svgContent: svgMatch
+              });
+            });
+          }
         });
 
         // Extract SVGs from CSS
@@ -261,7 +290,7 @@ const BackgroundRemover = () => {
           index === self.findIndex(i => i.url === img.url)
         );
 
-        console.log(`Found ${uniqueImages.length} unique images (including inline SVGs and CSS SVGs)`);
+        console.log(`Found ${uniqueImages.length} unique images (including ${allSvgElements.length} inline SVGs and CSS SVGs)`);
         return uniqueImages;
 
       } catch (error) {
@@ -330,6 +359,23 @@ const BackgroundRemover = () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       handleSearchImages();
+    }
+  };
+
+  const handleCopyUrl = async (url: string, filename: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: "Copied!",
+        description: `URL for ${filename} copied to clipboard`,
+      });
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+      toast({
+        title: "Copy Failed",
+        description: "Could not copy URL to clipboard",
+        variant: "destructive",
+      });
     }
   };
 
@@ -549,6 +595,14 @@ const BackgroundRemover = () => {
                         </div>
                       </Label>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleCopyUrl(image.url, image.filename)}
+                      className="flex-shrink-0"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
                   </div>
                 ))}
               </div>
